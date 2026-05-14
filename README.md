@@ -79,14 +79,45 @@ Then open **http://127.0.0.1:5000** in your browser.
 
 ---
 
+## Testing
+
+The test suite uses **pytest** and covers three layers:
+
+- **Parsing logic** — `parse_metar()` tested with mock METAR strings across all weather conditions (VFR/MVFR/IFR/LIFR, gusts, CAVOK, negative temperatures, fractional visibility, CB/TCU clouds, Q-altimeter, etc.)
+- **Helper functions** — `degrees_to_compass`, `knots_to_mph`, `c_to_f`, `relative_humidity`, `decode_weather`, `determine_flight_category`
+- **HTTP layer** — `fetch_metar()` with mocked `requests.get` (correct URL, error propagation)
+- **Flask route** — full request/response cycle via Flask test client with mocked `fetch_metar`
+
+### Install test dependencies
+
+```bash
+pip install -r requirements-dev.txt
+```
+
+### Run tests
+
+```bash
+python -m pytest
+```
+
+```bash
+python -m pytest -v   # verbose output
+```
+
+---
+
 ## Project Structure
 
 ```
 metar-reader/
-├── app.py               # Flask app + METAR parser
-├── requirements.txt
+├── app.py                  # Flask app + METAR parser
+├── requirements.txt        # Runtime dependencies
+├── requirements-dev.txt    # Dev/test dependencies
+├── pytest.ini              # pytest configuration
+├── tests/
+│   └── test_app.py         # 77 unit & integration tests
 └── templates/
-    └── index.html       # UI (Bootstrap 5, dark sky theme)
+    └── index.html          # UI (Bootstrap 5, dark sky theme)
 ```
 
 ---
