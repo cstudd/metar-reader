@@ -1,3 +1,11 @@
+"""
+METAR Reader — Flask web application.
+
+Fetches raw METAR strings from aviationweather.gov and decodes them into
+plain-English weather reports: wind, temperature, visibility, sky conditions,
+humidity, pressure, and FAA flight category (VFR/MVFR/IFR/LIFR).
+"""
+
 import math
 import re
 from datetime import datetime, timezone
@@ -39,18 +47,22 @@ COMPASS = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE',
 
 
 def degrees_to_compass(deg):
+    """Convert a wind bearing in degrees to a 16-point compass label."""
     return COMPASS[round(deg / 22.5) % 16]
 
 
 def knots_to_mph(kt):
+    """Convert knots to miles per hour, rounded to the nearest integer."""
     return round(kt * 1.15078)
 
 
 def c_to_f(c):
+    """Convert Celsius to Fahrenheit, rounded to the nearest integer."""
     return round(c * 9 / 5 + 32)
 
 
 def relative_humidity(temp_c, dew_c):
+    """Estimate relative humidity (%) using the Magnus formula approximation."""
     rh = 100 * math.exp(
         (17.625 * dew_c / (243.04 + dew_c)) - (17.625 * temp_c / (243.04 + temp_c))
     )
@@ -58,6 +70,13 @@ def relative_humidity(temp_c, dew_c):
 
 
 def is_weather_token(token):
+    """Return True if *token* is a valid METAR weather-phenomenon code.
+
+    METAR weather tokens are composed entirely of recognised 2-letter
+    descriptor and/or phenomenon codes, optionally prefixed with +/- (intensity)
+    or VC (vicinity). Anything that doesn't fit this pattern — sky groups,
+    temp/pressure tokens, etc. — returns False.
+    """
     t = token.lstrip('+-')
     if t.startswith('VC'):
         t = t[2:]
@@ -68,6 +87,14 @@ def is_weather_token(token):
 
 
 def decode_weather(token):
+    """Translate a raw weather token into a human-readable phrase.
+
+    Examples:
+        '-RA'    → 'light rain'
+        '+TSRA'  → 'heavy thunderstorm with rain'
+        'FZFG'   → 'freezing fog'
+        'VCSH'   → 'nearby showers of'
+    """
     t = token
     parts = []
 
@@ -95,12 +122,21 @@ def decode_weather(token):
 
 
 def parse_temp_token(t):
+    """Parse a METAR temperature token, where 'M' prefix means negative (e.g. M05 → -5)."""
     if t.startswith('M'):
         return -int(t[1:])
     return int(t)
 
 
 def determine_flight_category(clouds, vis_miles):
+    """Return the FAA flight category based on ceiling and visibility.
+
+    Categories (lowest ceiling or visibility wins):
+        VFR  — ceiling > 3 000 ft  AND visibility > 5 sm
+        MVFR — ceiling 1 000–3 000 ft OR visibility 3–5 sm
+        IFR  — ceiling   500–1 000 ft OR visibility 1–3 sm
+        LIFR — ceiling   < 500 ft     OR visibility < 1 sm
+    """
     ceiling = None
     for c in clouds:
         if c['cover'] in ('BKN', 'OVC', 'VV') and c['height_ft'] is not None:
@@ -117,6 +153,7 @@ def determine_flight_category(clouds, vis_miles):
 
 
 def build_summary(data):
+    """Compose a single plain-English sentence summarising the key weather conditions."""
     parts = []
 
     weather = data.get('weather', [])
@@ -158,6 +195,20 @@ def build_summary(data):
 
 
 def parse_metar(raw):
+    """Parse a raw METAR string into a structured dict of decoded weather values.
+
+    Processes tokens left-to-right following the standard METAR field order:
+    station → time → modifier → wind → visibility → RVR → weather phenomena
+    → sky conditions → temperature/dew point → altimeter → remarks.
+
+    Args:
+        raw: The raw METAR string, e.g. 'METAR KHIO 140953Z AUTO 18005KT ...'
+
+    Returns:
+        A dict containing decoded fields: station, time, wind, visibility,
+        weather, clouds, temperature, dew point, humidity, pressure,
+        flight_category, and a plain-English summary string.
+    """
     data = {
         'raw': raw, 'station': None, 'time': None, 'auto': False,
         'wind': None, 'wind_mph': None, 'wind_compass': None,
@@ -346,6 +397,17 @@ def parse_metar(raw):
 
 
 def fetch_metar(airport_code):
+    """Fetch the most recent raw METAR string for *airport_code* from aviationweather.gov.
+
+    Args:
+        airport_code: ICAO station identifier, e.g. 'KHIO'.
+
+    Returns:
+        The raw METAR string, or an empty string if none is available.
+
+    Raises:
+        requests.RequestException: On network or HTTP errors.
+    """
     url = f'https://aviationweather.gov/api/data/metar?ids={airport_code}&format=raw'
     resp = requests.get(url, timeout=10)
     resp.raise_for_status()
@@ -354,6 +416,7 @@ def fetch_metar(airport_code):
 
 @app.route('/', methods=['GET', 'POST'])
 def index():
+    """Render the main page; on POST, fetch and decode the requested airport's METAR."""
     result = None
     error = None
     airport = ''
