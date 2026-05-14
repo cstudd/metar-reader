@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>METAR Reader</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+  <style>
+    :root {
+      --sky-dark:   #0b1120;
+      --sky-mid:    #0f2240;
+      --sky-light:  #1a4a7a;
+      --accent:     #4fc3f7;
+      --glass-bg:   rgba(255,255,255,0.06);
+      --glass-border: rgba(255,255,255,0.12);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      background: linear-gradient(160deg, var(--sky-dark) 0%, var(--sky-mid) 55%, var(--sky-light) 100%);
+      min-height: 100vh;
+      color: #fff;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+    }
+
+    /* ── Hero ── */
+    .hero {
+      padding: 3.5rem 1rem 2rem;
+      text-align: center;
+    }
+    .hero h1 {
+      font-size: clamp(2rem, 5vw, 3rem);
+      font-weight: 700;
+      letter-spacing: -1px;
+    }
+    .hero p { color: rgba(255,255,255,0.5); }
+
+    /* ── Search ── */
+    .search-wrap { max-width: 520px; margin: 2rem auto 0; }
+    .search-wrap input {
+      text-transform: uppercase;
+      letter-spacing: 3px;
+      font-size: 1.15rem;
+      font-weight: 600;
+      background: rgba(255,255,255,0.08);
+      border: 2px solid rgba(255,255,255,0.2);
+      color: #fff;
+      border-radius: 14px 0 0 14px;
+      transition: border-color .2s, background .2s;
+    }
+    .search-wrap input::placeholder { color: rgba(255,255,255,0.35); letter-spacing: 1px; font-weight: 400; }
+    .search-wrap input:focus {
+      background: rgba(255,255,255,0.13);
+      border-color: var(--accent);
+      color: #fff;
+      box-shadow: 0 0 0 .2rem rgba(79,195,247,.2);
+    }
+    .search-wrap .btn {
+      border-radius: 0 14px 14px 0;
+      font-weight: 600;
+      padding: 0 1.5rem;
+      background: var(--accent);
+      border: none;
+      color: #0b1120;
+      transition: opacity .15s;
+    }
+    .search-wrap .btn:hover { opacity: .85; }
+
+    /* ── Error ── */
+    .err-box {
+      max-width: 640px;
+      margin: 1.5rem auto;
+      background: rgba(255,80,80,.15);
+      border: 1px solid rgba(255,80,80,.35);
+      border-radius: 14px;
+      padding: 1rem 1.5rem;
+      color: #ff8a80;
+      text-align: center;
+    }
+
+    /* ── Weather card ── */
+    .weather-card {
+      max-width: 900px;
+      margin: 2rem auto 3rem;
+      background: var(--glass-bg);
+      backdrop-filter: blur(24px);
+      border: 1px solid var(--glass-border);
+      border-radius: 24px;
+      padding: 2rem 2rem 1.75rem;
+    }
+
+    /* ── Card header ── */
+    .card-header-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      flex-wrap: wrap;
+      gap: 1rem;
+      margin-bottom: 1.5rem;
+    }
+    .station-id {
+      font-size: 2rem;
+      font-weight: 800;
+      letter-spacing: 4px;
+      line-height: 1;
+    }
+    .station-meta { font-size: .85rem; color: rgba(255,255,255,.5); margin-top: .35rem; }
+
+    /* ── Flight category badge ── */
+    .fc-badge {
+      display: inline-block;
+      padding: .35rem 1.1rem;
+      border-radius: 50px;
+      font-weight: 700;
+      font-size: .85rem;
+      letter-spacing: 1px;
+    }
+    .fc-VFR  { background: #00c853; color: #fff; }
+    .fc-MVFR { background: #2979ff; color: #fff; }
+    .fc-IFR  { background: #e53935; color: #fff; }
+    .fc-LIFR { background: #ab47bc; color: #fff; }
+
+    /* ── Summary banner ── */
+    .summary-banner {
+      background: rgba(79,195,247,.08);
+      border-left: 3px solid var(--accent);
+      border-radius: 10px;
+      padding: .85rem 1.25rem;
+      font-size: 1.05rem;
+      color: rgba(255,255,255,.9);
+      margin-bottom: 1.75rem;
+      line-height: 1.6;
+    }
+
+    /* ── Stat cards ── */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+      gap: .85rem;
+      margin-bottom: 1.75rem;
+    }
+    .stat {
+      background: rgba(255,255,255,.05);
+      border: 1px solid var(--glass-border);
+      border-radius: 16px;
+      padding: 1.1rem 1rem;
+    }
+    .stat i {
+      font-size: 1.4rem;
+      color: var(--accent);
+      display: block;
+      margin-bottom: .4rem;
+    }
+    .stat .lbl {
+      font-size: .7rem;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: rgba(255,255,255,.5);
+      margin-bottom: .2rem;
+    }
+    .stat .val {
+      font-size: 1.3rem;
+      font-weight: 700;
+      line-height: 1.15;
+    }
+    .stat .sub { font-size: .8rem; color: rgba(255,255,255,.5); margin-top: .1rem; }
+
+    /* ── Sections ── */
+    .section-title {
+      font-size: .7rem;
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+      color: rgba(255,255,255,.4);
+      margin-bottom: .6rem;
+    }
+    .cloud-item {
+      display: flex;
+      align-items: center;
+      gap: .5rem;
+      padding: .3rem 0;
+      color: rgba(255,255,255,.85);
+      font-size: .95rem;
+    }
+    .cloud-item i { color: var(--accent); }
+
+    .weather-pill {
+      display: inline-block;
+      background: rgba(79,195,247,.15);
+      border: 1px solid rgba(79,195,247,.3);
+      border-radius: 50px;
+      padding: .25rem .85rem;
+      font-size: .85rem;
+      margin: .2rem;
+      text-transform: capitalize;
+    }
+
+    /* ── Raw METAR ── */
+    .raw-box {
+      background: rgba(0,0,0,.35);
+      border: 1px solid rgba(255,255,255,.08);
+      border-radius: 10px;
+      padding: .75rem 1rem;
+      font-family: 'Cascadia Code', 'Consolas', monospace;
+      font-size: .82rem;
+      color: #a5d6a7;
+      word-break: break-all;
+      margin-top: 1.5rem;
+    }
+
+    /* ── Footer ── */
+    .footer { text-align: center; color: rgba(255,255,255,.25); font-size: .78rem; padding-bottom: 2rem; }
+    .footer a { color: rgba(255,255,255,.35); text-decoration: none; }
+    .footer a:hover { color: rgba(255,255,255,.6); }
+
+    /* ── Divider ── */
+    .divider { border-color: rgba(255,255,255,.08); margin: 1.25rem 0; }
+  </style>
+</head>
+<body>
+
+<div class="container-fluid px-3">
+
+  <!-- Hero / Search -->
+  <div class="hero">
+    <h1>
+      <i class="bi bi-cloud-sun-fill me-2" style="color:var(--accent)"></i>METAR Reader
+    </h1>
+    <p class="mt-1">Enter an ICAO airport code to get a plain-English weather report</p>
+
+    <div class="search-wrap">
+      <form method="POST" action="/">
+        <div class="input-group input-group-lg">
+          <input
+            type="text" name="airport"
+            class="form-control"
+            placeholder="e.g. KHIO, KJFK, EGLL"
+            value="{{ airport }}"
+            maxlength="4"
+            autocomplete="off"
+            autocapitalize="characters"
+            spellcheck="false"
+          >
+          <button class="btn" type="submit">
+            <i class="bi bi-search me-1"></i>Get Weather
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Error -->
+  {% if error %}
+  <div class="err-box">
+    <i class="bi bi-exclamation-triangle-fill me-2"></i>{{ error }}
+  </div>
+  {% endif %}
+
+  <!-- Results -->
+  {% if result %}
+  <div class="weather-card">
+
+    <!-- Header row -->
+    <div class="card-header-row">
+      <div>
+        <div class="station-id">
+          <i class="bi bi-geo-alt-fill me-1" style="color:var(--accent); font-size:1.4rem; vertical-align:middle"></i>
+          {{ result.station }}
+        </div>
+        <div class="station-meta">
+          <i class="bi bi-clock me-1"></i>{{ result.time }}
+          {% if result.auto %}
+          <span class="ms-2 badge bg-secondary" style="font-size:.7rem">AUTO</span>
+          {% endif %}
+        </div>
+      </div>
+      <div class="text-end">
+        <span class="fc-badge fc-{{ result.flight_category }}">
+          {{ result.flight_category }} &mdash; {{ result.flight_category_label }}
+        </span>
+        {% if result.weather %}
+        <div class="mt-2">
+          {% for w in result.weather %}
+          <span class="weather-pill">{{ w }}</span>
+          {% endfor %}
+        </div>
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- Summary -->
+    {% if result.summary %}
+    <div class="summary-banner">
+      <i class="bi bi-info-circle-fill me-2" style="color:var(--accent)"></i>{{ result.summary }}
+    </div>
+    {% endif %}
+
+    <!-- Stats grid -->
+    <div class="stats-grid">
+
+      {% if result.temperature_f is not none %}
+      <div class="stat">
+        <i class="bi bi-thermometer-half"></i>
+        <div class="lbl">Temperature</div>
+        <div class="val">{{ result.temperature_f }}°F</div>
+        <div class="sub">{{ result.temperature_c }}°C</div>
+      </div>
+      {% endif %}
+
+      {% if result.wind %}
+      <div class="stat">
+        <i class="bi bi-wind"></i>
+        <div class="lbl">Wind</div>
+        <div class="val" style="font-size:1rem; line-height:1.35">{{ result.wind }}</div>
+      </div>
+      {% endif %}
+
+      {% if result.visibility %}
+      <div class="stat">
+        <i class="bi bi-eye-fill"></i>
+        <div class="lbl">Visibility</div>
+        <div class="val">{{ result.visibility }}</div>
+      </div>
+      {% endif %}
+
+      {% if result.humidity is not none %}
+      <div class="stat">
+        <i class="bi bi-droplet-fill"></i>
+        <div class="lbl">Humidity</div>
+        <div class="val">{{ result.humidity }}%</div>
+        <div class="sub">Dew point {{ result.dewpoint_f }}°F</div>
+      </div>
+      {% endif %}
+
+      {% if result.pressure_inhg is not none %}
+      <div class="stat">
+        <i class="bi bi-speedometer2"></i>
+        <div class="lbl">Pressure</div>
+        <div class="val">{{ result.pressure_inhg }}"</div>
+        <div class="sub">{{ result.pressure_mb }} mb</div>
+      </div>
+      {% endif %}
+
+    </div>
+
+    <!-- Sky conditions -->
+    {% if result.clouds %}
+    <hr class="divider">
+    <div class="section-title"><i class="bi bi-clouds me-1"></i>Sky Conditions</div>
+    {% for cloud in result.clouds %}
+    <div class="cloud-item">
+      <i class="bi bi-cloud-fill"></i>{{ cloud.text }}
+    </div>
+    {% endfor %}
+    {% endif %}
+
+    <!-- Raw METAR -->
+    <div class="section-title mt-3"><i class="bi bi-code-slash me-1"></i>Raw METAR</div>
+    <div class="raw-box">{{ result.raw }}</div>
+
+  </div>
+  {% endif %}
+
+</div>
+
+<div class="footer">
+  Data from <a href="https://aviationweather.gov" target="_blank" rel="noopener">aviationweather.gov</a>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
